@@ -795,7 +795,7 @@ class DifferentiableAlways(STLFormula):
         return [self.subformula]
 
     def __str__(self):
-        return "◻ " + str(self._interval) + "( " + str(self.subformula) + " )"
+        return "◻ [a,b] ( " + str(self.subformula) + " )"
 
 class DifferentiableEventually(STLFormula):
     def __init__(self, subformula, interval=None):
@@ -837,4 +837,4 @@ class DifferentiableEventually(STLFormula):
         return [self.subformula]
 
     def __str__(self):
-        return "♢ " + str(self._interval) + "( " + str(self.subformula) + " )"
+        return "♢ [a,b] ( " + str(self.subformula) + " )"
