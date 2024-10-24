@@ -2,6 +2,9 @@ import torch
 import functools
 from typing import Union, Callable
 
+def smooth_mask(T, t_start, t_end, scale):
+    xs = torch.arange(T) * 1.
+    return torch.sigmoid(scale * (xs - t_start * T)) - torch.sigmoid(scale * (xs - t_end * T))
 
 def maxish_softmax(signal: torch.Tensor,
                    dim: int=0,
