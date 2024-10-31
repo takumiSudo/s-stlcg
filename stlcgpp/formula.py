@@ -481,8 +481,8 @@ class Until(STLFormula):
         signal1_padded = torch.cat([signal1_matrix, signal1_pad], dim=time_dim)
         signal2_padded = torch.cat([signal2_matrix, signal2_pad], dim=time_dim)
 
-        phi1_mask = torch.stack([torch.triu(torch.ones([T + interval[1]+1,T]), -end_idx) * torch.tril(torch.ones([T + interval[1]+1,T])) for end_idx in range(interval[0], interval[-1]+1)], 0)
-        phi2_mask = torch.stack([torch.triu(torch.ones([T + interval[1]+1,T]), -end_idx) * torch.tril(torch.ones([T + interval[1]+1,T]), -end_idx) for end_idx in range(interval[0], interval[-1]+1)], 0)
+        phi1_mask = torch.stack([torch.triu(torch.ones([T + interval[1]+1,T], device=device), -end_idx) * torch.tril(torch.ones([T + interval[1]+1,T], device=device)) for end_idx in range(interval[0], interval[-1]+1)], 0)
+        phi2_mask = torch.stack([torch.triu(torch.ones([T + interval[1]+1,T], device=device), -end_idx) * torch.tril(torch.ones([T + interval[1]+1,T], device=device), -end_idx) for end_idx in range(interval[0], interval[-1]+1)], 0)
         phi1_masked_signal = torch.stack([torch.where(m1==1.0, signal1_padded, mask_value) for m1 in phi1_mask], 0)
         phi2_masked_signal = torch.stack([torch.where(m2==1.0, signal2_padded, mask_value) for m2 in phi2_mask], 0)
         return maxish(torch.stack([minish(torch.stack([minish(s1, dim=0, keepdim=False, **kwargs), minish(s2, dim=0, keepdim=False, **kwargs)], dim=0), dim=0, keepdim=False, **kwargs) for (s1, s2) in zip(phi1_masked_signal, phi2_masked_signal)], dim=0), dim=0, keepdim=False, **kwargs)
