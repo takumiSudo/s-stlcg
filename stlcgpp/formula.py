@@ -360,7 +360,7 @@ class Eventually(STLFormula):
         self.subformula = subformula
         self._interval = [0, torch.inf] if self.interval is None else self.interval
 
-    def robustness_trace(self, signal, padding="last", large_number=1E9, **kwargs):
+    def robustness_trace(self, signal, padding=None, large_number=1E9, **kwargs):
         device = signal.device
         time_dim = 0  # assuming signal is [time_dim,...]
         signal = self.subformula(signal, padding=padding, large_number=large_number, **kwargs)
@@ -368,6 +368,8 @@ class Eventually(STLFormula):
         mask_value = -large_number
         if self.interval is None:
             interval = [0,T-1]
+        elif self.interval[1] == torch.inf:
+            interval = [self.interval[0], T-1]
         else:
             interval = self.interval
         signal_matrix = signal.reshape([T,1]) @ torch.ones([1,T], device=device)
@@ -376,7 +378,7 @@ class Eventually(STLFormula):
         elif padding == "mean":
             pad_value = signal.mean(time_dim)
         else:
-            pad_value = padding
+            pad_value = mask_value
         signal_pad = torch.ones([interval[1]+1, T], device=device) * pad_value
         signal_padded = torch.cat([signal_matrix, signal_pad], dim=time_dim)
         subsignal_mask = torch.tril(torch.ones([T + interval[1]+1,T], device=device))
@@ -400,7 +402,7 @@ class Always(STLFormula):
         self.subformula = subformula
         self._interval = [0, torch.inf] if self.interval is None else self.interval
 
-    def robustness_trace(self, signal, padding="last", large_number=1E9, **kwargs):
+    def robustness_trace(self, signal, padding=None, large_number=1E9, **kwargs):
         device = signal.device
         time_dim = 0  # assuming signal is [time_dim,...]
         signal = self.subformula(signal, padding=padding, large_number=large_number, **kwargs)
@@ -408,6 +410,8 @@ class Always(STLFormula):
         mask_value = large_number
         if self.interval is None:
             interval = [0,T-1]
+        elif self.interval[1] == torch.inf:
+            interval = [self.interval[0], T-1]
         else:
             interval = self.interval
         signal_matrix = signal.reshape([T,1]) @ torch.ones([1,T], device=device)
@@ -416,7 +420,7 @@ class Always(STLFormula):
         elif padding == "mean":
             pad_value = signal.mean(time_dim)
         else:
-            pad_value = padding
+            pad_value = mask_value
         signal_pad = torch.ones([interval[1]+1, T], device=device) * pad_value
         signal_padded = torch.cat([signal_matrix, signal_pad], dim=time_dim)
         subsignal_mask = torch.tril(torch.ones([T + interval[1]+1,T], device=device))
@@ -441,7 +445,7 @@ class Until(STLFormula):
         self._interval = [0, torch.inf] if self.interval is None else self.interval
 
 
-    def robustness_trace(self, signal, padding="last", large_number=1E9, **kwargs):
+    def robustness_trace(self, signal, padding=None, large_number=1E9, **kwargs):
         device =signal.device
         time_dim = 0  # assuming signal is [time_dim,...]
         if isinstance(signal, tuple):
@@ -458,6 +462,8 @@ class Until(STLFormula):
         mask_value = large_number
         if self.interval is None:
             interval = [0,T-1]
+        elif self.interval[1] == torch.inf:
+            interval = [self.interval[0], T-1]
         else:
             interval = self.interval
         signal1_matrix = signal1.reshape([T,1]) @ torch.ones([1,T], device=device)
@@ -469,8 +475,8 @@ class Until(STLFormula):
             signal1_pad = torch.ones([interval[1]+1, T], device=device) * signal1.mean(time_dim)
             signal2_pad = torch.ones([interval[1]+1, T], device=device) * signal2.mean(time_dim)
         else:
-            signal1_pad = torch.ones([interval[1]+1, T], device=device) * padding
-            signal2_pad = torch.ones([interval[1]+1, T], device=device) * padding
+            signal1_pad = torch.ones([interval[1]+1, T], device=device) * -mask_value
+            signal2_pad = torch.ones([interval[1]+1, T], device=device) * -mask_value
 
         signal1_padded = torch.cat([signal1_matrix, signal1_pad], dim=time_dim)
         signal2_padded = torch.cat([signal2_matrix, signal2_pad], dim=time_dim)
@@ -479,7 +485,7 @@ class Until(STLFormula):
         phi2_mask = torch.stack([torch.triu(torch.ones([T + interval[1]+1,T]), -end_idx) * torch.tril(torch.ones([T + interval[1]+1,T]), -end_idx) for end_idx in range(interval[0], interval[-1]+1)], 0)
         phi1_masked_signal = torch.stack([torch.where(m1==1.0, signal1_padded, mask_value) for m1 in phi1_mask], 0)
         phi2_masked_signal = torch.stack([torch.where(m2==1.0, signal2_padded, mask_value) for m2 in phi2_mask], 0)
-        return maxish(torch.stack([minish(torch.stack([minish(s1, dim=0, keepdim=False), minish(s2, dim=0, keepdim=False)], dim=0), dim=0, keepdim=False) for (s1, s2) in zip(phi1_masked_signal, phi2_masked_signal)], dim=0), dim=0, keepdim=False)
+        return maxish(torch.stack([minish(torch.stack([minish(s1, dim=0, keepdim=False, **kwargs), minish(s2, dim=0, keepdim=False, **kwargs)], dim=0), dim=0, keepdim=False, **kwargs) for (s1, s2) in zip(phi1_masked_signal, phi2_masked_signal)], dim=0), dim=0, keepdim=False, **kwargs)
 
     def _next_function(self):
         """ next function is the input subformula. For visualization purposes """
@@ -509,41 +515,7 @@ class TemporalOperator(STLFormula):
             self.hidden_dim = self.interval[0]
         self.steps = 1 if not self.interval else self.interval[-1] - self.interval[0] + 1   # steps=1 if interval is [0, ∞) otherwise steps=length of interval
         self.operation = None
-
-
-
-    def _initialize_hidden_state(self, signal):
-        """
-        Compute the initial hidden state.
-
-        Args:
-            signal: the input signal. Expected size [time_dim,]
-
-        Returns:
-            h0: initial hidden state is [hidden_dim,]
-
-        Notes:
-        Initializing the hidden state requires padding on the signal. Currently, the default is to extend the last value.
-        TODO: have option on this padding
-
-        """
-        device = signal.device
-
-        # Matrices that shift a vector and add a new entry at the end.
-        self.M = torch.diag(torch.ones(self.hidden_dim-1, device=device), diagonal=1)
-        self.b = torch.zeros(self.hidden_dim, device=device)
-        self.b[-1] = 1.0
-
-        # Case 1, 2, 4
-        # TODO: make this less hard-coded. Assumes signal is [bs, time_dim, signal_dim], and already reversed
-        # pads with the signal value at the last time step.
-        h0 = torch.ones([self.hidden_dim, *signal.shape[1:]], device=device) * signal[:1]
-
-        # Case 3: if self.interval is [a, torch.inf), then the hidden state is a tuple (like in an LSTM)
-        if (self._interval[1] == torch.inf) & (self._interval[0] > 0):
-            c0 = signal[:1]
-            return (c0, h0)
-        return h0
+        self.LARGE_NUMBER = 1E9
 
     def cell(self, x, hidden_state, **kwargs):
         """
@@ -581,7 +553,7 @@ class TemporalOperator(STLFormula):
         return output, hidden_state_
 
 
-    def _run_cell(self, signal, **kwargs):
+    def _run_cell(self, signal, padding, **kwargs):
         """
         Function to run a signal through a cell T times, where T is the length of the signal in the time dimension
 
@@ -595,7 +567,7 @@ class TemporalOperator(STLFormula):
             states: list of hidden_states
         """
         time_dim = 0  # assuming signal is [time_dim,...]
-        hidden_state = self._initialize_hidden_state(signal)                               # [hidden_dim]
+        hidden_state = self._initialize_hidden_state(signal, padding)                               # [hidden_dim]
         outputs = []
         states = []
 
@@ -607,7 +579,7 @@ class TemporalOperator(STLFormula):
         return outputs, states
 
 
-    def robustness_trace(self, signal, **kwargs):
+    def _robustness_trace(self, signal, padding, **kwargs):
         """
         Function to compute robustness trace of a temporal STL formula
         First, compute the robustness trace of the subformula, and use that as the input for the recurrent computation
@@ -622,8 +594,20 @@ class TemporalOperator(STLFormula):
         """
         time_dim = 0  # assuming signal is [time_dim,...]
         trace = self.subformula(signal, **kwargs)
-        outputs, _ = self._run_cell(trace, **kwargs)
+        outputs, _ = self._run_cell(trace, padding, **kwargs)
         return torch.concatenate(outputs, axis=time_dim)                     # [time_dim, ]
+
+    def robustness(self, signal, **kwargs):
+        """
+        Computes the robustness value. Extracts the last entry along time_dim of robustness trace.
+
+        Args:
+            signal: jnp.array or Expression. Expected size [bs, time_dim, state_dim]
+            kwargs: Other arguments including time_dim, approx_method, temperature
+
+        Return: jnp.array, same as input with the time_dim removed.
+        """
+        return self.__call__(signal, **kwargs)[-1]
 
     def _next_function(self):
         """ next function is the input subformula. For visualization purposes """
@@ -642,8 +626,65 @@ class AlwaysRecurrent(TemporalOperator):
     def __init__(self, subformula, interval=None):
         super().__init__(subformula=subformula, interval=interval)
 
+
+    def _initialize_hidden_state(self, signal, padding):
+        """
+        Compute the initial hidden state.
+
+        Args:
+            signal: the input signal. Expected size [time_dim,]
+
+        Returns:
+            h0: initial hidden state is [hidden_dim,]
+
+        Notes:
+        Initializing the hidden state requires padding on the signal. Currently, the default is to extend the last value.
+        TODO: have option on this padding
+
+        """
+        device = signal.device
+
+        # Matrices that shift a vector and add a new entry at the end.
+        self.M = torch.diag(torch.ones(self.hidden_dim-1, device=device), diagonal=1)
+        self.b = torch.zeros(self.hidden_dim, device=device)
+        self.b[-1] = 1.0
+
+        if padding == "last":
+            pad_value = signal[0].detach()
+        elif padding == "mean":
+            pad_value = signal.mean(0).detach()
+        else:
+            pad_value = self.LARGE_NUMBER
+
+        # Case 1, 2, 4
+        # TODO: make this less hard-coded. Assumes signal is [bs, time_dim, signal_dim], and already reversed
+        # pads with the signal value at the last time step.
+        h0 = torch.ones([self.hidden_dim, *signal.shape[1:]], device=device) * pad_value
+
+        # Case 3: if self.interval is [a, torch.inf), then the hidden state is a tuple (like in an LSTM)
+        if (self._interval[1] == torch.inf) & (self._interval[0] > 0):
+            c0 = signal[:1]
+            return (c0, h0)
+        return h0
+
+
     def cell(self, x, hidden_state, **kwargs):
         return self._cell(x, hidden_state, minish, **kwargs)
+
+    def robustness_trace(self, signal, padding=1E6, **kwargs):
+        """
+        Function to compute robustness trace of a temporal STL formula
+        First, compute the robustness trace of the subformula, and use that as the input for the recurrent computation
+
+        Args:
+            signal: input signal, size = [bs, time_dim, ...]
+            time_dim: axis corresponding to time_dim. Default: 1
+            kwargs: Other arguments including time_dim, approx_method, temperature
+
+        Returns:
+            robustness_trace: jnp.array. Same size as signal.
+        """
+        return self._robustness_trace(signal, padding, **kwargs)
 
     def __str__(self):
         return "◻ " + str(self._interval) + "( " + str(self.subformula) + " )"
@@ -661,8 +702,65 @@ class EventuallyRecurrent(TemporalOperator):
     def __init__(self, subformula, interval=None):
         super().__init__(subformula=subformula, interval=interval)
 
+
+    def _initialize_hidden_state(self, signal, padding):
+        """
+        Compute the initial hidden state.
+
+        Args:
+            signal: the input signal. Expected size [time_dim,]
+
+        Returns:
+            h0: initial hidden state is [hidden_dim,]
+
+        Notes:
+        Initializing the hidden state requires padding on the signal. Currently, the default is to extend the last value.
+        TODO: have option on this padding
+
+        """
+        device = signal.device
+
+        # Matrices that shift a vector and add a new entry at the end.
+        self.M = torch.diag(torch.ones(self.hidden_dim-1, device=device), diagonal=1)
+        self.b = torch.zeros(self.hidden_dim, device=device)
+        self.b[-1] = 1.0
+
+        if padding == "last":
+            pad_value = signal[0].detach()
+        elif padding == "mean":
+            pad_value = signal.mean(0).detach()
+        else:
+            pad_value = -self.LARGE_NUMBER
+
+        # Case 1, 2, 4
+        # TODO: make this less hard-coded. Assumes signal is [bs, time_dim, signal_dim], and already reversed
+        # pads with the signal value at the last time step.
+        h0 = torch.ones([self.hidden_dim, *signal.shape[1:]], device=device) * pad_value
+
+        # Case 3: if self.interval is [a, torch.inf), then the hidden state is a tuple (like in an LSTM)
+        if (self._interval[1] == torch.inf) & (self._interval[0] > 0):
+            c0 = signal[:1]
+            return (c0, h0)
+        return h0
+
     def cell(self, x, hidden_state, **kwargs):
         return self._cell(x, hidden_state, maxish, **kwargs)
+
+    def robustness_trace(self, signal, padding=-1E6, **kwargs):
+        """
+        Function to compute robustness trace of a temporal STL formula
+        First, compute the robustness trace of the subformula, and use that as the input for the recurrent computation
+
+        Args:
+            signal: input signal, size = [bs, time_dim, ...]
+            time_dim: axis corresponding to time_dim. Default: 1
+            kwargs: Other arguments including time_dim, approx_method, temperature
+
+        Returns:
+            robustness_trace: jnp.array. Same size as signal.
+        """
+        return self._robustness_trace(signal, padding, **kwargs)
+
 
     def __str__(self):
         return "♢ " + str(self._interval) + "( " + str(self.subformula) + " )"
@@ -685,7 +783,7 @@ class UntilRecurrent(STLFormula):
         self.interval = interval
         if overlap == False:
             self.subformula2 = Eventually(subformula=subformula2, interval=[0,1])
-        self.LARGE_NUMBER = 1E6
+        self.LARGE_NUMBER = 1E9
 
     def robustness_trace(self, signal, **kwargs):
         """
@@ -745,6 +843,18 @@ class UntilRecurrent(STLFormula):
 
         return maxish(minish(torch.stack([LHS, RHS], dim=-1), dim=-1, keepdim=False, **kwargs), dim=-1, keepdim=False, **kwargs)
 
+    def robustness(self, signal, **kwargs):
+        """
+        Computes the robustness value. Extracts the last entry along time_dim of robustness trace.
+
+        Args:
+            signal: jnp.array or Expression. Expected size [bs, time_dim, state_dim]
+            kwargs: Other arguments including time_dim, approx_method, temperature
+
+        Return: jnp.array, same as input with the time_dim removed.
+        """
+        return self.__call__(signal, **kwargs)[-1]
+
 
     def _next_function(self):
         """ next function is the input subformulas. For visualization purposes """
@@ -764,7 +874,7 @@ class DifferentiableAlways(STLFormula):
         self.subformula = subformula
         self._interval = [0, torch.inf] if self.interval is None else self.interval
 
-    def robustness_trace(self, signal, t_start, t_end, scale=1.0, padding="last", large_number=1E6, delta=1E-3, **kwargs):
+    def robustness_trace(self, signal, t_start, t_end, scale=1.0, padding=None, large_number=1E6, delta=1E-3, **kwargs):
         device = signal.device
         time_dim = 0  # assuming signal is [time_dim,...]
         signal = self.subformula(signal, padding=padding, large_number=large_number)
@@ -805,7 +915,7 @@ class DifferentiableEventually(STLFormula):
         self.subformula = subformula
         self._interval = [0, torch.inf] if self.interval is None else self.interval
 
-    def robustness_trace(self, signal, t_start, t_end, scale=1.0, padding="last", large_number=1E6, **kwargs):
+    def robustness_trace(self, signal, t_start, t_end, scale=1.0, padding=None, large_number=1E6, **kwargs):
         device = signal.device
         time_dim = 0  # assuming signal is [time_dim,...]
         delta = 1E-3
