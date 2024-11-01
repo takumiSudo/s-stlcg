@@ -822,7 +822,7 @@ class UntilRecurrent(STLFormula):
         # Case 1, interval = [0, inf]
         if self.interval == None:
             for i in range(n_time_steps):
-                RHS[i:,i] = Alw(trace1[i:])
+                RHS[i:,i] = Alw(trace1[i:], **kwargs)
                 # RHS = RHS.at[i:,i].set(Alw(trace1[i:]))
 
         # Case 2 and 4: self.interval is [a, b], a ≥ 0, b < ∞
@@ -832,14 +832,14 @@ class UntilRecurrent(STLFormula):
             for i in range(n_time_steps):
                 end = i+b+1
                 # RHS = RHS.at[i+a:end,i].set(Alw(trace1[i:end])[a:])
-                RHS[i+a:end,i] = Alw(trace1[i:end])[a:]
+                RHS[i+a:end,i] = Alw(trace1[i:end], **kwargs)[a:]
 
         # Case 3: self.interval is [a, np.inf), a ≂̸ 0
         else:
             a = self.interval[0]
             for i in range(n_time_steps):
                 # RHS = RHS.at[i+a:,i].set(Alw(trace1[i:])[a:])
-                RHS[i+a:,i] = Alw(trace1[i:])[a:]
+                RHS[i+a:,i] = Alw(trace1[i:], **kwargs)[a:]
 
         return maxish(minish(torch.stack([LHS, RHS], dim=-1), dim=-1, keepdim=False, **kwargs), dim=-1, keepdim=False, **kwargs)
 
