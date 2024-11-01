@@ -9,28 +9,28 @@ def smooth_mask(T, t_start, t_end, scale):
 def maxish_softmax(signal: torch.Tensor,
                    dim: int=0,
                    keepdim: bool=True,
-                   temperature: float=1.0):
+                   temperature: float=1.0, **kwargs):
 
     return (torch.nn.functional.softmax(temperature * signal, dim=dim) * signal).sum(dim=dim, keepdim=keepdim)
 
 def minish_softmax(signal: torch.Tensor,
                    dim: int=0,
                    keepdim: bool=True,
-                   temperature: float=1.0):
+                   temperature: float=1.0, **kwargs):
 
     return -maxish_softmax(-signal, temperature, dim, keepdim)
 
 def maxish_logsumexp(signal: torch.Tensor,
                      dim: int=0,
                      keepdim: bool=True,
-                     temperature: float=1.0):
+                     temperature: float=1.0, **kwargs):
 
     return torch.logsumexp(temperature * signal, dim=dim, keepdim=keepdim) / temperature
 
 def minish_logsumexp(signal: torch.Tensor,
                      dim: int=0,
                      keepdim: bool=True,
-                     temperature: float=1.0):
+                     temperature: float=1.0, **kwargs):
 
     return -maxish_logsumexp(-signal, temperature, dim, keepdim)
 
@@ -38,7 +38,7 @@ def maxish(signal: torch.Tensor,
            dim: int=0,
            keepdim: bool=True,
            approx_method: str="true",
-           temperature: float=1.0):
+           temperature: float=1.0, **kwargs):
 
     match approx_method:
         case "true":
@@ -54,7 +54,7 @@ def minish(signal: torch.Tensor,
            dim: int=0,
            keepdim: bool=True,
            approx_method: str="true",
-           temperature: float=1.0):
+           temperature: float=1.0, **kwargs):
 
     return -maxish(-signal, dim=dim, keepdim=keepdim, approx_method=approx_method, temperature=temperature)
 
