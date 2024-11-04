@@ -83,3 +83,12 @@ def separate_or(formula, signal, **kwargs):
             return torch.cat([separate_or(formula.subformula1, signal, **kwargs), separate_or(formula.subformula2, signal, **kwargs)], dim=-1)
 
 
+def scan(f, init, xs, length=None):
+    if xs is None:
+        xs = [None] * length
+    carry = init
+    ys = []
+    for x in xs:
+        carry, y = f(carry, x)
+        ys.append(y)
+    return carry, torch.stack(ys)
