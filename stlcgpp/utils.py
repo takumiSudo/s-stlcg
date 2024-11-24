@@ -2,6 +2,12 @@ import torch
 import functools
 from typing import Union, Callable
 
+def cond(pred, true_fun, false_fun, *operands):
+    if pred:
+        return true_fun(*operands)
+    else:
+        return false_fun(*operands)
+
 def smooth_mask(T, t_start, t_end, scale):
     xs = torch.arange(T) * 1.
     return torch.sigmoid(scale * (xs - t_start * T)) - torch.sigmoid(scale * (xs - t_end * T))

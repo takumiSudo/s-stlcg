@@ -31,6 +31,76 @@ class Predicate(torch.nn.Module):
     def forward(self, signal: torch.Tensor):
         return self.predicate(signal)
 
+    def set_name(self, new_name):
+        self.name = new_name
+
+    def __neg__(self):
+        return Predicate('- ' + self.name, lambda x: -self.predicate_function(x))
+
+    def __add__(self, other):
+        if isinstance(other, Predicate):
+            return Predicate(self.name + ' + ' + other.name, lambda x: self.predicate_function(x) + other.predicate_function(x))
+        else:
+            raise ValueError("Type error. Must be Predicate")
+
+    def __radd__(self, other):
+        return self.__add__(other)
+
+    def __sub__(self, other):
+        if isinstance(other, Predicate):
+            return Predicate(self.name + ' - ' + other.name, lambda x: self.predicate_function(x) - other.predicate_function(x))
+        else:
+            raise ValueError("Type error. Must be Predicate")
+
+    def __rsub__(self, other):
+        return self.__sub__(other)
+        # No need for the case when "other" is an Expression, since that
+        # case will be handled by the regular sub
+
+    def __mul__(self, other):
+        if isinstance(other, Predicate):
+            return Predicate(self.name + ' x ' + other.name, lambda x: self.predicate_function(x) * other.predicate_function(x))
+        else:
+            raise ValueError("Type error. Must be Predicate")
+
+    def __rmul__(self, other):
+        return self.__mul__(other)
+
+    def __truediv__(a, b):
+        if isinstance(a, Predicate) and isinstance(b, Predicate):
+            return Predicate(a.name + ' / ' + b.name, lambda x: a.predicate_function(x) / b.predicate_function(x))
+        else:
+            raise ValueError("Type error. Must be Predicate")
+
+    # Comparators
+    def __lt__(lhs, rhs):
+        assert isinstance(lhs, str) | isinstance(lhs, Predicate), "LHS of LessThan needs to be a string or Predicate"
+        assert not isinstance(rhs, str), "RHS cannot be a string"
+        return LessThan(lhs, rhs)
+
+    def __le__(lhs, rhs):
+        assert isinstance(lhs, str) | isinstance(lhs, Predicate), "LHS of LessThan needs to be a string or Predicate"
+        assert not isinstance(rhs, str), "RHS cannot be a string"
+        return LessThan(lhs, rhs)
+
+    def __gt__(lhs, rhs):
+        assert isinstance(lhs, str) | isinstance(lhs, Predicate), "LHS of GreaterThan needs to be a string or Predicate"
+        assert not isinstance(rhs, str), "RHS cannot be a string"
+        return GreaterThan(lhs, rhs)
+
+    def __ge__(lhs, rhs):
+        assert isinstance(lhs, str) | isinstance(lhs, Predicate), "LHS of GreaterThan needs to be a string or Predicate"
+        assert not isinstance(rhs, str), "RHS cannot be a string"
+        return GreaterThan(lhs, rhs)
+
+    def __eq__(lhs, rhs):
+        assert isinstance(lhs, str) | isinstance(lhs, Predicate), "LHS of Equal needs to be a string or Predicate"
+        assert not isinstance(rhs, str), "RHS cannot be a string"
+        return Equal(lhs, rhs)
+
+    def __str__(self):
+        return str(self.name)
+
 
 def convert_to_input_values(inputs):
     if not isinstance(inputs, tuple):
@@ -364,10 +434,12 @@ class Eventually(STLFormula):
         signal = self.subformula(signal, padding=padding, large_number=large_number, **kwargs)
         T = signal.shape[time_dim]
         mask_value = -large_number
+        offset = 0
         if self.interval is None:
             interval = [0,T-1]
         elif self.interval[1] == torch.inf:
             interval = [self.interval[0], T-1]
+            offset = self.interval[0]
         else:
             interval = self.interval
         signal_matrix = signal.reshape([T,1]) @ torch.ones([1,T], device=device)
@@ -380,7 +452,7 @@ class Eventually(STLFormula):
         signal_pad = torch.ones([interval[1]+1, T], device=device) * pad_value
         signal_padded = torch.cat([signal_matrix, signal_pad], dim=time_dim)
         subsignal_mask = torch.tril(torch.ones([T + interval[1]+1,T], device=device))
-        time_interval_mask = torch.triu(torch.ones([T + interval[1]+1,T], device=device), -interval[-1]) * torch.tril(torch.ones([T + interval[1]+1,T], device=device), -interval[0])
+        time_interval_mask = torch.triu(torch.ones([T + interval[1]+1,T], device=device), -interval[-1]-offset) * torch.tril(torch.ones([T + interval[1]+1,T], device=device), -interval[0])
         masked_signal_matrix = torch.where((time_interval_mask * subsignal_mask) == 1., signal_padded, mask_value)
         return maxish(masked_signal_matrix, dim=time_dim, keepdim=False, **kwargs)
 
@@ -406,23 +478,34 @@ class Always(STLFormula):
         signal = self.subformula(signal, padding=padding, large_number=large_number, **kwargs)
         T = signal.shape[time_dim]
         mask_value = large_number
-        if self.interval is None:
-            interval = [0,T-1]
-        elif self.interval[1] == torch.inf:
-            interval = [self.interval[0], T-1]
-        else:
-            interval = self.interval
+        sign = 1.
+        offset = 0.
+
+        def true_func(_interval, T):
+            return [_interval[0], T-1], -1., _interval[0]
+        def false_func(_interval, T):
+            return _interval, 1., 0
+        operands = (self._interval, T,)
+        interval, sign, offset = cond(self._interval[1] == torch.inf, true_func, false_func, *operands)
+
+        # if self.interval is None:
+        #     interval = [0,T-1]
+        # elif self.interval[1] == torch.inf:
+        #     interval = [self.interval[0], T-1]
+        # else:
+        #     interval = self.interval
         signal_matrix = signal.reshape([T,1]) @ torch.ones([1,T], device=device)
         if padding == "last":
             pad_value = signal[-1]
         elif padding == "mean":
             pad_value = signal.mean(time_dim)
         else:
-            pad_value = mask_value
-        signal_pad = torch.ones([interval[1]+1, T], device=device) * pad_value
+            pad_value = -large_number
+        signal_pad = torch.cat([torch.ones([interval[1], T], device=device) * sign * pad_value, torch.ones([1, T], device=device) * pad_value], dim=time_dim)
+        # signal_pad = torch.ones([interval[1]+1, T], device=device) * pad_value
         signal_padded = torch.cat([signal_matrix, signal_pad], dim=time_dim)
         subsignal_mask = torch.tril(torch.ones([T + interval[1]+1,T], device=device))
-        time_interval_mask = torch.triu(torch.ones([T + interval[1]+1,T], device=device), -interval[-1]) * torch.tril(torch.ones([T + interval[1]+1,T], device=device), -interval[0])
+        time_interval_mask = torch.triu(torch.ones([T + interval[1]+1,T], device=device), -interval[-1]-offset) * torch.tril(torch.ones([T + interval[1]+1,T], device=device), -interval[0])
         masked_signal_matrix = torch.where((time_interval_mask * subsignal_mask) == 1., signal_padded, mask_value)
         return minish(masked_signal_matrix, dim=time_dim, keepdim=False, **kwargs)
 
@@ -503,10 +586,13 @@ class TemporalOperator(STLFormula):
 
         if self.interval is None:
             self.hidden_dim = None
+            self._interval = None
         elif interval[1] == torch.inf:
             self.hidden_dim = None
+            self._interval = [interval[0], interval[1]]
         else:
             self.hidden_dim = interval[1] + 1
+            self._interval = [interval[0], interval[1]]
 
 
         self.LARGE_NUMBER = 1E9
@@ -514,7 +600,7 @@ class TemporalOperator(STLFormula):
 
     def _get_interval_indices(self):
         start_idx = -self.hidden_dim
-        end_idx = -self.interval[0]
+        end_idx = -self._interval[0]
 
         return start_idx, (None if end_idx  == 0 else end_idx)
 
@@ -537,17 +623,17 @@ class TemporalOperator(STLFormula):
         elif padding == "mean":
             pad_value = (signal).mean(0).detach()
         else:
-            pad_value = self.sign * self.LARGE_NUMBER
+            pad_value = - self.LARGE_NUMBER
 
         n_time_steps = signal.shape[0]
 
         # compute hidden dim if signal length was needed
-        if self.hidden_dim is None:
+        if (self.interval is None) or (self.interval[1] == torch.inf):
             self.hidden_dim = n_time_steps
         if self.interval is None:
-            self.interval = [0, n_time_steps - 1]
+            self._interval = [0, n_time_steps - 1]
         elif self.interval[1] == torch.inf:
-            self.interval[1] = n_time_steps - 1
+            self._interval[1] = n_time_steps - 1
 
         # self.M = torch.diag(torch.ones(self.hidden_dim-1), k=1)
         # self.b = torch.zeros(self.hidden_dim)
@@ -556,6 +642,9 @@ class TemporalOperator(STLFormula):
         self.M = torch.diag(torch.ones(self.hidden_dim-1, device=device), diagonal=1)
         self.b = torch.zeros(self.hidden_dim, device=device)
         self.b[-1] = 1.0
+
+        if (self.interval is None) or (self.interval[1] == torch.inf):
+            pad_value = torch.cat([torch.ones(self._interval[0] + 1, device=device) * pad_value, torch.ones(self.hidden_dim - self._interval[0] - 1, device=device) * self.sign * pad_value])
 
         h0 = torch.ones(self.hidden_dim, device=device) * pad_value
 
@@ -588,7 +677,7 @@ class AlwaysRecurrent(TemporalOperator):
     def __init__(self, subformula, interval=None):
         super().__init__(subformula=subformula, interval=interval)
         self.operation = minish
-        self.sign = 1.
+        self.sign = -1.
 
     def __str__(self):
         return "◻ " + str(self._interval) + "( " + str(self.subformula) + " )"
@@ -598,7 +687,7 @@ class EventuallyRecurrent(TemporalOperator):
     def __init__(self, subformula, interval=None):
         super().__init__(subformula=subformula, interval=interval)
         self.operation = maxish
-        self.sign = -1.
+        self.sign = 1.
 
     def __str__(self):
         return "♢ " + str(self._interval) + "( " + str(self.subformula) + " )"
@@ -657,10 +746,14 @@ class UntilRecurrent(STLFormula):
         self.b = torch.zeros(self.hidden_dim, device=device)
         self.b[-1] = 1.0
 
-        pad_value = -self.LARGE_NUMBER
+
+        if self.hidden_dim == n_time_steps:
+            pad_value = self.LARGE_NUMBER
+        else:
+            pad_value = -self.LARGE_NUMBER
 
         h1 = pad_value * self.ones_array
-        h2 = pad_value * self.ones_array
+        h2 = -self.LARGE_NUMBER * self.ones_array
         return (h1, h2), trace1, trace2
 
     def _get_interval_indices(self):
@@ -740,7 +833,7 @@ class DifferentiableAlways(STLFormula):
 
         self.interval = interval
         self.subformula = subformula
-        self._interval = [0, torch.inf] if self.interval is None else self.interval
+        # self._interval = [0, torch.inf] if self.interval is None else self.interval
 
     def robustness_trace(self, signal, t_start, t_end, scale=1.0, padding=None, large_number=1E6, delta=1E-3, **kwargs):
         device = signal.device
@@ -758,8 +851,8 @@ class DifferentiableAlways(STLFormula):
         elif padding == "mean":
             pad_value = signal.mean(time_dim)
         else:
-            pad_value = padding
-        signal_pad = torch.ones([interval[1]+1, T], device=device) * pad_value
+            pad_value = -mask_value
+        signal_pad = torch.ones([T, T], device=device) * pad_value
         signal_padded = torch.cat([signal_matrix, signal_pad], dim=time_dim)
         smooth_time_mask = smooth_mask(T, t_start, t_end, scale)# * (1 - delta) + delta
         padded_smooth_time_mask = torch.zeros([2 * T, T], device=device)
@@ -800,7 +893,7 @@ class DifferentiableEventually(STLFormula):
         elif padding == "mean":
             pad_value = signal.mean(time_dim)
         else:
-            pad_value = padding
+            pad_value = mask_value
         signal_pad = torch.ones([interval[1]+1, T], device=device) * pad_value
         signal_padded = torch.cat([signal_matrix, signal_pad], dim=time_dim)
         smooth_time_mask = smooth_mask(T, t_start, t_end, scale)# * (1 - delta) + delta
