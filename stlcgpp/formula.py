@@ -20,6 +20,77 @@ class Expression(torch.nn.Module):
     def forward(self):
         return self.value
 
+    def __neg__(self):
+        return Expression('-' + self.name, -self.value)
+
+    def __add__(self, other):
+        if isinstance(other, Expression):
+            return Expression(self.name + ' + ' + other.name, self.value + other.value)
+        else:
+            return Expression(self.name + ' + other', self.value + other)
+
+    def __radd__(self, other):
+        return self.__add__(other)
+
+    def __sub__(self, other):
+        if isinstance(other, Expression):
+            return Expression(self.name + ' - ' + other.name, self.value - other.value)
+        else:
+            return Expression(self.name + " - other", self.value - other)
+
+    def __rsub__(self, other):
+        return self.__sub__(other)
+        # No need for the case when "other" is an Expression, since that
+        # case will be handled by the regular sub
+
+    def __mul__(self, other):
+        if isinstance(other, Expression):
+            return Expression(self.name + ' × ' + other.name, self.value * other.value)
+        else:
+            return Expression(self.name + " * other", self.value * other)
+
+    def __rmul__(self, other):
+        return self.__mul__(other)
+
+    def __truediv__(a, b):
+        # This is the new form required by Python 3
+        numerator = a
+        denominator = b
+        return Expression(numerator.name + '/' + denominator.name, numerator.value/denominator.value)
+
+    # Comparators
+    def __lt__(lhs, rhs):
+        assert isinstance(lhs, str) | isinstance(lhs, Expression), "LHS of LessThan needs to be a string or Expression"
+        assert not isinstance(rhs, str), "RHS cannot be a string"
+        return LessThan(lhs, rhs)
+
+    def __le__(lhs, rhs):
+        assert isinstance(lhs, str) | isinstance(lhs, Expression), "LHS of LessThan needs to be a string or Expression"
+        assert not isinstance(rhs, str), "RHS cannot be a string"
+        return LessThan(lhs, rhs)
+
+    def __gt__(lhs, rhs):
+        assert isinstance(lhs, str) | isinstance(lhs, Expression), "LHS of GreaterThan needs to be a string or Expression"
+        assert not isinstance(rhs, str), "RHS cannot be a string"
+        return GreaterThan(lhs, rhs)
+
+    def __ge__(lhs, rhs):
+        assert isinstance(lhs, str) | isinstance(lhs, Expression), "LHS of GreaterThan needs to be a string or Expression"
+        assert not isinstance(rhs, str), "RHS cannot be a string"
+        return GreaterThan(lhs, rhs)
+
+    def __eq__(lhs, rhs):
+        assert isinstance(lhs, str) | isinstance(lhs, Expression), "LHS of Equal needs to be a string or Expression"
+        assert not isinstance(rhs, str), "RHS cannot be a string"
+        return Equal(lhs, rhs)
+
+    # def __ne__(lhs, rhs):
+    #     raise NotImplementedError("Not supported yet")
+
+    def __str__(self):
+        return str(self.name)
+
+
 # Predicates
 
 class Predicate(torch.nn.Module):
@@ -191,6 +262,17 @@ class STLFormula(torch.nn.Module):
     def _next_function(self):
         """Function to keep track of the subformulas. For visualization purposes"""
         raise NotImplementedError("_next_function not year implemented")
+
+
+    """ Overwriting some built-in functions for notational simplicity """
+    def __and__(self, psi):
+        return And(self, psi)
+
+    def __or__(self, psi):
+        return Or(self, psi)
+
+    def __invert__(self):
+        return Negation(self)
 
 class Identity(STLFormula):
     """ The identity formula. Use in UntilRecurrent"""
