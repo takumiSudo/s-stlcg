@@ -665,10 +665,12 @@ class TemporalOperator(STLFormula):
         super().__init__()
         self.subformula = subformula
         self.interval = interval
+        self.interval_str = interval
 
         if self.interval is None:
             self.hidden_dim = None
             self._interval = None
+            self.interval_str = [0, torch.inf]
         elif interval[1] == torch.inf:
             self.hidden_dim = None
             self._interval = [interval[0], interval[1]]
@@ -762,7 +764,7 @@ class AlwaysRecurrent(TemporalOperator):
         self.sign = -1.
 
     def __str__(self):
-        return "◻ " + str(self._interval) + "( " + str(self.subformula) + " )"
+        return "◻ " + str(self.interval_str) + "( " + str(self.subformula) + " )"
 
 class EventuallyRecurrent(TemporalOperator):
 
@@ -772,7 +774,7 @@ class EventuallyRecurrent(TemporalOperator):
         self.sign = 1.
 
     def __str__(self):
-        return "♢ " + str(self._interval) + "( " + str(self.subformula) + " )"
+        return "♢ " + str(self.interval_str) + "( " + str(self.subformula) + " )"
 
 
 
