@@ -94,13 +94,13 @@ class Expression(torch.nn.Module):
 # Predicates
 
 class Predicate(torch.nn.Module):
-    def __init__(self, name, predicate: Callable):
+    def __init__(self, name, predicate_function: Callable):
         super(Predicate, self).__init__()
         self.name = name
-        self.predicate = predicate
+        self.predicate_function = predicate_function
 
     def forward(self, signal: torch.Tensor):
-        return self.predicate(signal)
+        return self.predicate_function(signal)
 
     def set_name(self, new_name):
         self.name = new_name
