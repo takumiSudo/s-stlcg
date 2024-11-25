@@ -27,7 +27,6 @@ In the future, we will have documentation in a single location. But for the mean
 * Setting up signals for the formulas, including the use of Expressions and Predicates
 * Defining STL formulas and visualizing them
 * Evaluating STL robustness, and robustness trace
-* Gradient descent on STL parameters and signal parameters.
 
 
 
