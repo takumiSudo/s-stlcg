@@ -919,16 +919,12 @@ class DifferentiableAlways(STLFormula):
         self.subformula = subformula
         # self._interval = [0, torch.inf] if self.interval is None else self.interval
 
-    def robustness_trace(self, signal, t_start, t_end, scale=1.0, padding=None, large_number=1E6, delta=1E-3, **kwargs):
+    def robustness_trace(self, signal, t_start, t_end, scale=1.0, padding=None, large_number=1E9, delta=1E-3, **kwargs):
         device = signal.device
         time_dim = 0  # assuming signal is [time_dim,...]
-        signal = self.subformula(signal, padding=padding, large_number=large_number)
+        signal = self.subformula(signal, padding=padding, large_number=large_number, **kwargs)
         T = signal.shape[time_dim]
         mask_value = large_number
-        if self.interval is None:
-            interval = [0,T-1]
-        else:
-            interval = self.interval
         signal_matrix = signal.reshape([T,1]) @ torch.ones([1,T], device=device)
         if padding == "last":
             pad_value = signal[-1]
@@ -938,12 +934,10 @@ class DifferentiableAlways(STLFormula):
             pad_value = -mask_value
         signal_pad = torch.ones([T, T], device=device) * pad_value
         signal_padded = torch.cat([signal_matrix, signal_pad], dim=time_dim)
-        smooth_time_mask = smooth_mask(T, t_start, t_end, scale)# * (1 - delta) + delta
-        padded_smooth_time_mask = torch.zeros([2 * T, T], device=device)
-        for t in range(T):
-            padded_smooth_time_mask[t:t+T,t] = smooth_time_mask
+        smooth_time_mask = smooth_mask(T, t_start, t_end, scale, device=device)# * (1 - delta) + delta
+        padded_smooth_time_mask = torch.stack([torch.concat([torch.zeros(i, device=device), smooth_time_mask, torch.zeros(T-i, device=device)]) for i in range(T)], 1)
         masked_signal_matrix = torch.where(padded_smooth_time_mask > delta, signal_padded * padded_smooth_time_mask, mask_value)
-        return minish(masked_signal_matrix, dim=time_dim, keepdim=False)
+        return minish(masked_signal_matrix, dim=time_dim, keepdim=False, **kwargs)
 
     def _next_function(self):
         """ next function is the input subformula. For visualization purposes """
@@ -960,17 +954,13 @@ class DifferentiableEventually(STLFormula):
         self.subformula = subformula
         self._interval = [0, torch.inf] if self.interval is None else self.interval
 
-    def robustness_trace(self, signal, t_start, t_end, scale=1.0, padding=None, large_number=1E6, **kwargs):
+    def robustness_trace(self, signal, t_start, t_end, scale=1.0, padding=None, large_number=1E9, **kwargs):
         device = signal.device
         time_dim = 0  # assuming signal is [time_dim,...]
         delta = 1E-3
-        signal = self.subformula(signal, padding=padding, large_number=large_number)
+        signal = self.subformula(signal, padding=padding, large_number=large_number, **kwargs)
         T = signal.shape[time_dim]
         mask_value = -large_number
-        if self.interval is None:
-            interval = [0,T-1]
-        else:
-            interval = self.interval
         signal_matrix = signal.reshape([T,1]) @ torch.ones([1,T], device=device)
         if padding == "last":
             pad_value = signal[-1]
@@ -978,14 +968,12 @@ class DifferentiableEventually(STLFormula):
             pad_value = signal.mean(time_dim)
         else:
             pad_value = mask_value
-        signal_pad = torch.ones([interval[1]+1, T], device=device) * pad_value
+        signal_pad = torch.ones([T, T], device=device) * pad_value
         signal_padded = torch.cat([signal_matrix, signal_pad], dim=time_dim)
-        smooth_time_mask = smooth_mask(T, t_start, t_end, scale)# * (1 - delta) + delta
-        padded_smooth_time_mask = torch.zeros([2 * T, T], device=device)
-        for t in range(T):
-            padded_smooth_time_mask[t:t+T,t] = smooth_time_mask
+        smooth_time_mask = smooth_mask(T, t_start, t_end, scale, device=device)# * (1 - delta) + delta
+        padded_smooth_time_mask = torch.stack([torch.concat([torch.zeros(i, device=device), smooth_time_mask, torch.zeros(T-i, device=device)]) for i in range(T)], 1)
         masked_signal_matrix = torch.where(padded_smooth_time_mask > delta, signal_padded * padded_smooth_time_mask, mask_value)
-        return maxish(masked_signal_matrix, dim=time_dim, keepdim=False)
+        return maxish(masked_signal_matrix, dim=time_dim, keepdim=False, **kwargs)
 
     def _next_function(self):
         """ next function is the input subformula. For visualization purposes """

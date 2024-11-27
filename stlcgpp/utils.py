@@ -8,8 +8,8 @@ def cond(pred, true_fun, false_fun, *operands):
     else:
         return false_fun(*operands)
 
-def smooth_mask(T, t_start, t_end, scale):
-    xs = torch.arange(T) * 1.
+def smooth_mask(T, t_start, t_end, scale, device="cpu"):
+    xs = torch.arange(T, device=device).float()
     return torch.sigmoid(scale * (xs - t_start * T)) - torch.sigmoid(scale * (xs - t_end * T))
 
 def maxish_softmax(signal: torch.Tensor,
