@@ -1,6 +1,4 @@
-
-import jax
-import jax.numpy as torch
+import torch
 import numpy as np
 from stlcgpp.formula import *
 
