@@ -599,6 +599,7 @@ class Always(STLFormula):
         return "◻ " + str(self._interval) + "( " + str(self.subformula) + " )"
 
 
+
 class Until(STLFormula):
     def __init__(self, subformula1, subformula2, interval=None):
         super().__init__()
@@ -609,6 +610,8 @@ class Until(STLFormula):
 
 
     def robustness_trace(self, signal, padding=None, large_number=1E9, **kwargs):
+        import time
+        start_time = time.time()
         device =signal.device
         time_dim = 0  # assuming signal is [time_dim,...]
         if isinstance(signal, tuple):
@@ -629,26 +632,74 @@ class Until(STLFormula):
             interval = [self.interval[0], T-1]
         else:
             interval = self.interval
-        signal1_matrix = signal1.reshape([T,1]) @ torch.ones([1,T], device=device)
-        signal2_matrix = signal2.reshape([T,1]) @ torch.ones([1,T], device=device)
-        if padding == "last":
-            signal1_pad = torch.ones([interval[1]+1, T], device=device) * signal1[-1]
-            signal2_pad = torch.ones([interval[1]+1, T], device=device) * signal2[-1]
-        elif padding == "mean":
-            signal1_pad = torch.ones([interval[1]+1, T], device=device) * signal1.mean(time_dim)
-            signal2_pad = torch.ones([interval[1]+1, T], device=device) * signal2.mean(time_dim)
-        else:
-            signal1_pad = torch.ones([interval[1]+1, T], device=device) * -mask_value
-            signal2_pad = torch.ones([interval[1]+1, T], device=device) * -mask_value
+        
 
+        # Adding more memory efficiency (instead of creating a ones tensor and multiplying, expand will create views which are faster)
+        signal1_matrix = signal1.unsqueeze(1).expand(-1, T)
+        signal2_matrix = signal2.unsqueeze(1).expand(-1, T)
+    
+        if padding == "last":
+            pad_value1 = signal1[-1]
+            pad_value2 = signal2[-1]
+        elif padding == "mean":
+            pad_value1 = signal1.mean(dim=time_dim)
+            pad_value2 = signal2.mean(dim=time_dim)
+        else:
+            pad_value1 = torch.tensor(-mask_value, device=device) 
+            pad_value2 = torch.tensor(-mask_value, device=device)
+
+        # again instead of creating whole tensors, we just use expand which creates a view into it.
+        signal1_pad = pad_value1.view(1, 1).expand(interval[1] + 1, T)
+        signal2_pad = pad_value2.view(1, 1).expand(interval[1] + 1, T)
         signal1_padded = torch.cat([signal1_matrix, signal1_pad], dim=time_dim)
         signal2_padded = torch.cat([signal2_matrix, signal2_pad], dim=time_dim)
 
-        phi1_mask = torch.stack([torch.triu(torch.ones([T + interval[1]+1,T], device=device), -end_idx) * torch.tril(torch.ones([T + interval[1]+1,T], device=device)) for end_idx in range(interval[0], interval[-1]+1)], 0)
-        phi2_mask = torch.stack([torch.triu(torch.ones([T + interval[1]+1,T], device=device), -end_idx) * torch.tril(torch.ones([T + interval[1]+1,T], device=device), -end_idx) for end_idx in range(interval[0], interval[-1]+1)], 0)
-        phi1_masked_signal = torch.stack([torch.where(m1==1.0, signal1_padded, mask_value) for m1 in phi1_mask], 0)
-        phi2_masked_signal = torch.stack([torch.where(m2==1.0, signal2_padded, mask_value) for m2 in phi2_mask], 0)
+
+   
+        rows = torch.arange(T + interval[1] + 1, device=device).view(-1, 1)  # Row indices
+        cols = torch.arange(T, device=device).view(1, -1)                   # Column indices
+
+        # Generate masks diurectly without multiplying two subsequent masks
+        phi1_mask = torch.stack([
+            ((cols - rows >= -end_idx) & (cols - rows <= 0))    # Row-bound growth
+            for end_idx in range(interval[0], interval[-1] + 1)
+        ], dim=0)
+
+        phi2_mask = torch.stack([
+            ((cols - rows >= -end_idx) & (cols - rows <= -end_idx))   # Row-bound growth
+            for end_idx in range(interval[0], interval[-1] + 1)
+        ], dim=0)
+
+
+        # phi1_masked_signal = torch.stack([
+        #     torch.where(m1, signal1_padded, mask_value) for m1 in phi1_mask
+        # ], dim=0)
+
+        # phi2_masked_signal = torch.stack([
+        #     torch.where(m2, signal2_padded, mask_value) for m2 in phi2_mask
+        # ], dim=0)
+        # Add a batch dimension to signals for broadcasting
+
+        signal1_batched = signal1_padded.unsqueeze(0)  # [1, T + interval[1] + 1, T]
+        signal2_batched = signal2_padded.unsqueeze(0)  # [1, T + interval[1] + 1, T]
+
+        #Apply all masks in parallel using broadcasting
+        phi1_masked_signal = torch.where(
+            phi1_mask,  # [num_masks, T + interval[1] + 1, T]
+            signal1_batched,  # [1, T + interval[1] + 1, T]
+            mask_value  # Scalar, broadcasted
+        )  # Result: [num_masks, T + interval[1] + 1, T]
+
+        phi2_masked_signal = torch.where(
+            phi2_mask,  # [num_masks, T + interval[1] + 1, T]
+            signal2_batched,  # [1, T + interval[1] + 1, T]
+            mask_value  # Scalar, broadcasted
+        )  
+
         return maxish(torch.stack([minish(torch.stack([minish(s1, dim=0, keepdim=False, **kwargs), minish(s2, dim=0, keepdim=False, **kwargs)], dim=0), dim=0, keepdim=False, **kwargs) for (s1, s2) in zip(phi1_masked_signal, phi2_masked_signal)], dim=0), dim=0, keepdim=False, **kwargs)
+
+
+      
 
     def _next_function(self):
         """ next function is the input subformula. For visualization purposes """
