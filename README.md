@@ -1,5 +1,7 @@
 stlcg-plus-plus (stlcg++)
 ======
+[![Paper](http://img.shields.io/badge/arXiv-2207.00669-B31B1B.svg)](https://arxiv.org/abs/2501.04194)
+
 
 A toolbox to compute the robustness of STL formulas using computation graphs. This is the PyTorch version of the `STLCG++`, an updated version of the original [`STLCG` toolbox originally implemented in PyTorch](https://github.com/StanfordASL/stlcg/tree/dev).
 A JAX version of `STLCG++` can be found at [`STLJAX`](https://github.com/UW-CTRL/stljax)
@@ -11,9 +13,12 @@ Requires Python 3.10+
 
 Install the repo:
 
-```
-pip install git+https://github.com/UW-CTRL/stlcg-plus-plus.git
-```
+```pip install stlcgpp```
+
+Alternatively, if you want to develop on the code base, please fork this repo and make pull requests as needed.
+
+```pip install -e .```
+
 
 ## Description
 Please take a look at [README at `STLJAX`](https://github.com/UW-CTRL/stljax) for more details about the latest changes and updates to this toolbox.
