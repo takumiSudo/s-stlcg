@@ -8,7 +8,7 @@ setup(
     author_email="kymleung@uw.edu",
     packages=["stlcgpp"],
     install_requires=[
-        "torch",
+        "torch>=2.6.0",
         "matplotlib",
         "numpy",
         "graphviz"
