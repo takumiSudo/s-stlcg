@@ -1,5 +1,5 @@
 import torch
-from stlcgpp.utils import *
+from utils import *
 
 
 # Expressions

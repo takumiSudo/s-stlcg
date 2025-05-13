@@ -1,7 +1,7 @@
 from collections import namedtuple
 from graphviz import Digraph
 import torch
-from stlcgpp.formula import Expression, STLFormula
+from formula import Expression, STLFormula
 
 """
 Visualization of STL computation graphs

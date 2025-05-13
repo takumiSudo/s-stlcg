@@ -1,6 +1,6 @@
 import torch
 import numpy as np
-from stlcgpp.formula import *
+from formula import *
 
 
 def test_always(signal, interval, verbose=True, **kwargs):

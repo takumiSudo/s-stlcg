@@ -72,19 +72,21 @@ def maxish(
     **kwargs,
 ):
 
-    match approx_method:
-        case "true":
+    if approx_method == "true":
             return torch.max(signal, dim=dim, keepdim=keepdim)[0]
 
-        case "softmax":
-            return maxish_softmax(
-                signal, dim=dim, keepdim=keepdim, temperature=temperature
-            )
+    elif approx_method == "softmax":
+        return maxish_softmax(
+            signal, dim=dim, keepdim=keepdim, temperature=temperature
+        )
 
-        case "logsumexp":
-            return maxish_logsumexp(
-                signal, dim=dim, keepdim=keepdim, temperature=temperature
-            )
+    elif approx_method == "logsumexp":
+        return maxish_logsumexp(
+            signal, dim=dim, keepdim=keepdim, temperature=temperature
+        )
+
+    else:
+        raise ValueError(f"Unknown approx_method='{approx_method}' in maxish")
 
 
 def minish(
