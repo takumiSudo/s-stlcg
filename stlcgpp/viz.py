@@ -77,8 +77,27 @@ def make_stl_graph(
             )
         elif isinstance(form, Legend):
             dot.node(str(id(form)), form.name, fillcolor=form.color, color="white")
+        elif isinstance(form, nn.Module):
+            # Node for the module itself
+            dot.node(str(id(form)), form.__class__.__name__, fillcolor="lightgrey")
+
+            # 1) Recurse into sub‐modules (e.g. proj, spline)
+            for child_name, child in form.named_children():
+                dot.edge(str(id(child)), str(id(form)), label=child_name)
+                add_nodes(child)
+
+            # 2) Show direct parameters (knots, coefs, weight, bias)
+            for param_name, param in form.named_parameters(recurse=False):
+                label = f"{param_name}\n{tuple(param.shape)}"
+                node_id = str(id(param))
+                dot.node(node_id, label, fillcolor="yellow", shape="ellipse")
+                dot.edge(node_id, str(id(form)), style="dashed", label=param_name)
+
+            # Done – don’t fall through to the generic else
+            return
         else:
             dot.node(str(id(form)), str(form), fillcolor="palegreen")
+
 
         # recursive call to all the components of the formula
         if hasattr(form, "_next_function"):
